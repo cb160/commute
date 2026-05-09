@@ -16,4 +16,4 @@ RUN uv sync --no-dev --no-editable
 EXPOSE 5000
 
 # RTT_API_TOKEN must be injected at runtime (never bake credentials into the image)
-CMD ["/app/.venv/bin/gunicorn", "--bind", "0.0.0.0:5000", "--workers", "2", "--factory", "commute.web:create_app"]
+CMD ["/app/.venv/bin/gunicorn", "--bind", "0.0.0.0:5000", "--workers", "2", "commute.wsgi:app"]
