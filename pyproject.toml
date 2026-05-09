@@ -3,7 +3,7 @@ name = "commute"
 version = "0.1.0"
 description = "Live train departures from home station to work destinations (National Rail LDBSVWS)."
 requires-python = ">=3.11"
-dependencies = ["requests>=2.31", "python-dotenv>=1.0", "flask>=3.0"]
+dependencies = ["requests>=2.31", "python-dotenv>=1.0", "flask>=3.0", "gunicorn>=23.0"]
 
 [project.scripts]
 commute = "commute.cli:main"

@@ -81,9 +81,15 @@ def _svc_dict(crs: str, svc: Any) -> dict[str, Any]:
 
 
 def create_app(
-    home: str = "CTM",
-    destinations: tuple[str, ...] = ("STP", "CST"),
+    home: str | None = None,
+    destinations: tuple[str, ...] | None = None,
 ) -> Flask:
+    import os
+    if home is None:
+        home = os.environ.get("COMMUTE_HOME", "CTM")
+    if destinations is None:
+        dest_env = os.environ.get("COMMUTE_DESTINATIONS", "STP,CST")
+        destinations = tuple(d.strip() for d in dest_env.split(","))
     app = Flask(__name__)
 
     home_up = home.upper()
