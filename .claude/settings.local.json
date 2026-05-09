@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(uv sync *)",
+      "Bash(RAILDATA_API_KEY=Z6H1NhmvHi8fMiLciMPPKqcAiiomj4zPAPbkQZGGokj3dyPg uv run commute-trains)",
+      "Bash(uv run *)",
+      "Bash(RAILDATA_API_KEY=Z6H1NhmvHi8fMiLciMPPKqcAiiomj4zPAPbkQZGGokj3dyPg uv run commute-trains --window 240)"
+    ]
+  }
+}
