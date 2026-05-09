@@ -9,9 +9,12 @@ from __future__ import annotations
 import datetime as dt
 import threading
 import webbrowser
+import zoneinfo
 from typing import Any
 
-from flask import Flask, jsonify, render_template_string, request
+_UK = zoneinfo.ZoneInfo("Europe/London")
+
+from flask import Flask, Response, jsonify, render_template_string, request
 
 from .commute import CommuteFinder
 
@@ -108,6 +111,74 @@ def create_app(
             dests_display=dests_display,
         )
 
+    @app.route("/manifest.json")
+    def manifest():
+        import json
+        data = {
+            "name": f"Commute — {home_name}",
+            "short_name": "Commute",
+            "description": f"Live departures from {home_name}",
+            "start_url": "/",
+            "display": "standalone",
+            "background_color": "#071540",
+            "theme_color": "#071540",
+            "icons": [
+                {"src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable"},
+            ],
+        }
+        return Response(json.dumps(data), mimetype="application/manifest+json")
+
+    @app.route("/icon.svg")
+    def icon():
+        svg = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="96" fill="#071540"/>
+  <rect x="128" y="128" width="256" height="192" rx="24" fill="#1c3d8c"/>
+  <rect x="152" y="152" width="88" height="64" rx="8" fill="#4ab0ff"/>
+  <rect x="272" y="152" width="88" height="64" rx="8" fill="#4ab0ff"/>
+  <rect x="128" y="296" width="256" height="32" rx="0" fill="#0d2472"/>
+  <circle cx="176" cy="368" r="32" fill="#0d2472" stroke="#f5a520" stroke-width="8"/>
+  <circle cx="336" cy="368" r="32" fill="#0d2472" stroke="#f5a520" stroke-width="8"/>
+  <rect x="240" y="128" width="32" height="192" fill="#0d2472"/>
+  <rect x="96" y="320" width="320" height="16" rx="8" fill="#f5a520"/>
+</svg>"""
+        return Response(svg, mimetype="image/svg+xml")
+
+    @app.route("/sw.js")
+    def service_worker():
+        js = r"""
+const CACHE = "commute-v1";
+const SHELL = ["/", "/manifest.json", "/icon.svg"];
+
+self.addEventListener("install", e => {
+  e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));
+});
+
+self.addEventListener("activate", e => {
+  e.waitUntil(
+    caches.keys().then(keys => Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k))))
+      .then(() => self.clients.claim())
+  );
+});
+
+self.addEventListener("fetch", e => {
+  const url = new URL(e.request.url);
+  // Always network-first for the API (live data)
+  if (url.pathname.startsWith("/api/")) {
+    e.respondWith(fetch(e.request));
+    return;
+  }
+  // Cache-first for shell assets
+  e.respondWith(
+    caches.match(e.request).then(cached => cached || fetch(e.request).then(resp => {
+      const clone = resp.clone();
+      caches.open(CACHE).then(c => c.put(e.request, clone));
+      return resp;
+    }))
+  );
+});
+"""
+        return Response(js, mimetype="application/javascript")
+
     @app.route("/api/trains")
     def trains_api():
         direction  = request.args.get("direction", "outbound")
@@ -117,11 +188,11 @@ def create_app(
         is_arrival = request.args.get("is_arrival", "false").lower() == "true"
 
         finder = _get_finder(home_up, dests_up)
-        now = dt.datetime.now()
+        now = dt.datetime.now(_UK)
 
         if when_str:
             try:
-                when = dt.datetime.fromisoformat(when_str)
+                when = dt.datetime.fromisoformat(when_str).replace(tzinfo=_UK)
             except ValueError:
                 return jsonify(error=f"Invalid 'when': {when_str!r}"), 400
         else:
@@ -206,6 +277,11 @@ _HTML = r"""<!DOCTYPE html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#071540">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="manifest" href="/manifest.json">
 <title>Commute Trains</title>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
@@ -966,6 +1042,14 @@ function statusBadge(t){
     return `<span class="badge b-ok"><span class="dot"></span>On time</span>`;
   if(s==="Scheduled")
     return `<span class="badge b-sched"><span class="dot"></span>Scheduled</span>`;
+  // status is an HH:MM expected time — show delay in minutes if calculable
+  if(/^\d{2}:\d{2}$/.test(s) && t.std){
+    const [sh,sm] = t.std.split(":").map(Number);
+    const [eh,em] = s.split(":").map(Number);
+    const delay = (eh*60+em) - (sh*60+sm);
+    const label = delay > 0 ? `+${delay} min` : `Exp ${esc(s)}`;
+    return `<span class="badge b-late"><span class="dot"></span>${label}</span>`;
+  }
   return `<span class="badge b-late"><span class="dot"></span>${esc(s)}</span>`;
 }
 
@@ -1039,6 +1123,11 @@ function esc(s){
 
 // Boot
 fetchNow();
+
+// PWA service worker
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register("/sw.js").catch(() => {});
+}
 </script>
 </body>
 </html>"""
