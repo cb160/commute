@@ -1,0 +1,74 @@
+name: Build and push commute image
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Override version (e.g. 1.0.5). Defaults to 1.0.<run_number>'
+        required: false
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU (for ARM64 cross-compilation)
+        uses: docker/setup-qemu-action@v3
+
+      - name: Login to Docker Hub (required for BuildKit image pull)
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Determine image version
+        id: version
+        run: |
+          if [ -n "${{ github.event.inputs.version }}" ]; then
+            TAG="${{ github.event.inputs.version }}"
+          else
+            TAG="1.0.${{ github.run_number }}"
+          fi
+          echo "tag=${TAG}" >> $GITHUB_OUTPUT
+          echo "major_minor=$(echo $TAG | cut -d. -f1-2)" >> $GITHUB_OUTPUT
+          echo "Image tag: ${TAG}"
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ghcr.io/cb160/commute:${{ steps.version.outputs.tag }}
+            ghcr.io/cb160/commute:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Trigger cluster-tools deployment update
+        run: |
+          curl -s -X POST \
+            -H "Authorization: Bearer ${{ secrets.DEPLOY_TOKEN }}" \
+            -H "Accept: application/vnd.github.v3+json" \
+            https://api.github.com/repos/cb160/cluster-tools/dispatches \
+            -d "{\"event_type\":\"new-image-commute\",\"client_payload\":{\"version\":\"${{ steps.version.outputs.tag }}\",\"major_minor\":\"${{ steps.version.outputs.major_minor }}\"}}"
+          echo "Dispatched new-image-commute event to cluster-tools"

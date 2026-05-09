@@ -1,16 +1,14 @@
 [project]
-name = "commute-trains"
+name = "commute"
 version = "0.1.0"
 description = "Live train departures from home station to work destinations (National Rail LDBSVWS)."
 requires-python = ">=3.11"
-dependencies = ["requests>=2.31", "python-dotenv>=1.0"]
+dependencies = ["requests>=2.31", "python-dotenv>=1.0", "flask>=3.0"]
 
 [project.scripts]
-commute-trains = "commute_trains.cli:main"
+commute = "commute.cli:main"
+commute-web = "commute.web:main"
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
-
-[tool.hatch.build.targets.wheel]
-packages = ["src/commute_trains"]
